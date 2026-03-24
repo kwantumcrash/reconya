@@ -9,6 +9,7 @@ import (
 	"reconya/internal/network"
 	"reconya/internal/portscan"
 	"reconya/internal/scanner"
+	"reconya/internal/oui"
 	"reconya/models"
 	"sync"
 )
@@ -21,6 +22,7 @@ type PingSweepService struct {
 	PortScanService *portscan.PortScanService
 	portScanQueue   chan models.Device
 	portScanWorkers sync.WaitGroup
+	OUIService      *oui.OUIService
 }
 
 func NewPingSweepService(
@@ -28,7 +30,8 @@ func NewPingSweepService(
 	deviceService *device.DeviceService,
 	eventLogService *eventlog.EventLogService,
 	networkService *network.NetworkService,
-	portScanService *portscan.PortScanService) *PingSweepService {
+	portScanService *portscan.PortScanService,
+	ouiService *oui.OUIService) *PingSweepService {
 
 	service := &PingSweepService{
 		Config:          cfg,
@@ -36,7 +39,8 @@ func NewPingSweepService(
 		EventLogService: eventLogService,
 		NetworkService:  networkService,
 		PortScanService: portScanService,
-		portScanQueue:   make(chan models.Device, 100), // Buffer for 100 devices
+		portScanQueue:   make(chan models.Device, 100),
+		OUIService:      ouiService, // Buffer for 100 devices
 	}
 
 	// Start 3 port scan workers
@@ -79,6 +83,7 @@ func (s *PingSweepService) tryNativeScanner(network string) ([]models.Device, er
 	log.Printf("Trying native Go scanner on network: %s", network)
 
 	nativeScanner := scanner.NewNativeScanner()
+	nativeScanner.SetOUIService(s.OUIService)
 	devices, err := nativeScanner.ScanNetwork(network)
 	if err != nil {
 		return nil, err

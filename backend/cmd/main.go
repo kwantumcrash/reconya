@@ -230,7 +230,7 @@ func main() {
 	systemStatusService := systemstatus.NewSystemStatusService(systemStatusRepo, geolocationRepo)
 	settingsService := settings.NewSettingsService(settingsRepo)
 	portScanService := portscan.NewPortScanService(deviceService, eventLogService)
-	pingSweepService := pingsweep.NewPingSweepService(cfg, deviceService, eventLogService, networkService, portScanService)
+	pingSweepService := pingsweep.NewPingSweepService(cfg, deviceService, eventLogService, networkService, portScanService, ouiService)
 
 	ipv6MonitorService := ipv6monitor.NewIPv6MonitorService(deviceService, networkService, infoLogger)
 

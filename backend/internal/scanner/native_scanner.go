@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"reconya/models"
+	"reconya/internal/oui"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
@@ -27,6 +28,7 @@ type NativeScanner struct {
 	enableMACLookup          bool
 	enableHostnameLookup     bool
 	enableOnlineVendorLookup bool
+	ouiService             *oui.OUIService
 }
 
 type ScanResult struct {
@@ -56,6 +58,11 @@ func (s *NativeScanner) SetOptions(timeout time.Duration, concurrent int, enable
 	s.enableMACLookup = enableMAC
 	s.enableHostnameLookup = enableHostname
 	s.enableOnlineVendorLookup = enableOnlineVendor
+}
+
+// SetOUIService sets the OUI service for vendor lookups
+func (s *NativeScanner) SetOUIService(ouiService *oui.OUIService) {
+	s.ouiService = ouiService
 }
 
 // ScanNetwork performs a ping sweep on the given CIDR network
@@ -420,60 +427,17 @@ func (s *NativeScanner) lookupVendor(mac string) string {
 		return ""
 	}
 
-	// Extract OUI (first 3 octets)
-	oui := strings.ReplaceAll(mac[:8], ":", "")
-	oui = strings.ToUpper(oui)
-
-	// Built-in vendor database (most common vendors)
-	vendors := map[string]string{
-		"000040": "Applicon",
-		"0000FF": "Camtec Electronics",
-		"000020": "Dataindustrier Diab AB",
-		"001B63": "Apple",
-		"8C859":  "Apple",
-		"F0189":  "Apple",
-		"00226B": "Cisco Systems",
-		"0007EB": "Cisco Systems",
-		"5C5948": "Samsung Electronics",
-		"002454": "Intel Corporate",
-		"84FDD1": "Netgear",
-		"001E58": "Netgear",
-		"00095B": "Netgear",
-		"3C37E6": "Intel Corporate",
-		"7085C2": "Intel Corporate",
-		"DC85DE": "Intel Corporate",
-		"00D0C9": "Intel Corporate",
-		"E45F01": "Intel Corporate",
-		"38D547": "Apple",
-		"A4C361": "Apple",
-		"F02475": "Apple",
-		"14109F": "Apple",
-		"3451C9": "Apple",
-		"BC52B7": "Apple",
-		"E8802E": "Apple",
-		"E06267": "Apple",
-		"90B21F": "Apple",
-		"F86214": "Apple",
-		"68A86D": "Apple",
-		"7C6DF8": "Apple",
-		"DC86D8": "Apple",
-		"B065BD": "Apple",
-		"609AC1": "Apple",
-		"C82A14": "Apple",
-		"F0B479": "Apple",
-		"6C4008": "Apple",
-		"E0F847": "Apple",
-		"009EC8": "Apple",
-		"002332": "Apple",
-		"002608": "Apple",
+	// Use OUI service if available (full IEEE database)
+	if s.ouiService != nil {
+		if vendor := s.ouiService.LookupVendor(mac); vendor != "" {
+			return vendor
+		}
 	}
 
-	if vendor, exists := vendors[oui]; exists {
-		return vendor
-	}
-
-	// Try online OUI lookup if local database doesn't have it and online lookup is enabled
+	// Fall back to online lookup if enabled
 	if s.enableOnlineVendorLookup {
+		oui := strings.ReplaceAll(mac[:8], ":", "")
+		oui = strings.ToUpper(oui)
 		return s.lookupVendorOnline(oui)
 	}
 
