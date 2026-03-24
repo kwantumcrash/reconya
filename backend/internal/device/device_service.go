@@ -110,6 +110,16 @@ func (s *DeviceService) CreateOrUpdate(device *models.Device) (*models.Device, e
 
 	// Leave device name empty if not explicitly set
 
+	// Update vendor and hostname from scan if existing record has empty values
+	if existingDevice != nil {
+		if (device.Vendor == nil || *device.Vendor == "") && existingDevice.Vendor != nil && *existingDevice.Vendor != "" {
+			device.Vendor = existingDevice.Vendor
+		}
+		if (device.Hostname == nil || *device.Hostname == "") && existingDevice.Hostname != nil && *existingDevice.Hostname != "" {
+			device.Hostname = existingDevice.Hostname
+		}
+	}
+
 	// Use DB manager to serialize database access
 	return s.dbManager.CreateOrUpdateDevice(s.repository, context.Background(), device)
 }
