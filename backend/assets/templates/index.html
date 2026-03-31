@@ -386,7 +386,20 @@
                             
                             <!-- Network Devices -->
                             <div class="rounded">
-                                <h2 class="text-xs font-bold mb-4 text-green-500">[ NETWORK DEVICES ]</h2>
+                                <div class="flex items-center justify-between mb-4">
+                                    <h2 class="text-xs font-bold text-green-500">[ NETWORK DEVICES ]</h2>
+                                    <div class="flex items-center gap-1">
+                                        <button id="view-grid-btn" onclick="setDeviceView('grid')" class="p-1.5 rounded text-xs transition-colors" title="Tile View" style="color: var(--text-muted);">
+                                            <i class="ti ti-layout-grid"></i>
+                                        </button>
+                                        <button id="view-list-btn" onclick="setDeviceView('list')" class="p-1.5 rounded text-xs transition-colors" title="Simple List" style="color: var(--text-muted);">
+                                            <i class="ti ti-list"></i>
+                                        </button>
+                                        <button id="view-table-btn" onclick="setDeviceView('table')" class="p-1.5 rounded text-xs transition-colors" title="Table View" style="color: var(--text-muted);">
+                                            <i class="ti ti-table"></i>
+                                        </button>
+                                    </div>
+                                </div>
                                 <div id="devices-container" class="min-h-32">
                                     <div class="flex justify-center items-center py-8">
                                         <div class="animate-spin rounded-full h-8 w-8 border-2 border-green-500 border-t-transparent"></div>

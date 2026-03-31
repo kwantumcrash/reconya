@@ -1,4 +1,58 @@
 // Device functionality
+let currentDeviceView = localStorage.getItem('deviceView') || 'grid';
+let lastLoadedDevices = [];
+let tableSortCol = 'ipv4';
+let tableSortDir = 'asc';
+
+function updateViewButtons() {
+    ['grid', 'list', 'table'].forEach(m => {
+        const btn = document.getElementById(`view-${m}-btn`);
+        if (btn) {
+            if (m === currentDeviceView) {
+                btn.style.background = 'var(--bg-tertiary)';
+                btn.style.color = 'var(--text-primary)';
+            } else {
+                btn.style.background = 'transparent';
+                btn.style.color = 'var(--text-muted)';
+            }
+        }
+    });
+}
+
+function setDeviceView(mode) {
+    currentDeviceView = mode;
+    localStorage.setItem('deviceView', mode);
+    updateViewButtons();
+    renderDevices(lastLoadedDevices);
+}
+
+function renderDevices(devices) {
+    lastLoadedDevices = devices;
+    if (currentDeviceView === 'list') {
+        renderDeviceSimpleList(devices);
+    } else if (currentDeviceView === 'table') {
+        renderDeviceFullTable(devices);
+    } else {
+        renderDeviceGrid(devices);
+    }
+}
+
+function filterOnlineDevices(devices) {
+    if (!devices) return [];
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    return devices.filter(device => {
+        const lastSeenOnline = device.LastSeenOnlineAt || device.last_seen_online_at;
+        if (!lastSeenOnline && device.status !== 'online') return false;
+        if (device.status === 'offline') {
+            if (!lastSeenOnline) return false;
+            const lastSeen = new Date(lastSeenOnline);
+            if (lastSeen < oneHourAgo) return false;
+        }
+        return true;
+    });
+}
+
 function loadDevices(showSpinner = true) {
     console.log('loadDevices called with showSpinner:', showSpinner);
     const devicesContainer = document.getElementById('devices-container');
@@ -17,6 +71,8 @@ function loadDevices(showSpinner = true) {
         `;
     }
     
+    updateViewButtons();
+
     console.log('Making fetch request to /api/devices');
     fetch('/api/devices', { credentials: 'include' })
         .then(response => {
@@ -28,7 +84,7 @@ function loadDevices(showSpinner = true) {
         })
         .then(data => {
             console.log('Devices data received:', data);
-            renderDeviceGrid(data.devices || []);
+            renderDevices(data.devices || []);
         })
         .catch(error => {
             console.error('Error loading devices:', error);
@@ -76,35 +132,7 @@ function renderDeviceGrid(devices) {
         return;
     }
 
-    // Filter devices:
-    // 1. Must have been seen online at least once
-    // 2. If offline, must have been seen within the last hour
-    const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-
-    const onlineDevices = devices.filter(device => {
-        // Try different field name variations
-        const lastSeenOnline = device.LastSeenOnlineAt || device.last_seen_online_at;
-
-        // Must have been seen online at least once
-        if (!lastSeenOnline && device.status !== 'online') {
-            return false;
-        }
-
-        // If device is offline, check if it was seen within last hour
-        if (device.status === 'offline') {
-            if (!lastSeenOnline) {
-                return false; // No last seen timestamp, hide it
-            }
-            const lastSeen = new Date(lastSeenOnline);
-            if (lastSeen < oneHourAgo) {
-                console.log(`Hiding offline device ${device.ipv4}, last seen ${lastSeen.toLocaleString()}`);
-                return false; // Offline for more than 1 hour, hide it
-            }
-        }
-
-        return true;
-    });
+    const onlineDevices = filterOnlineDevices(devices);
 
     console.log('Filtered to', onlineDevices.length, 'devices that have been online (from', devices.length, 'total)');
 
@@ -198,6 +226,158 @@ function renderDeviceGrid(devices) {
 
     gridHTML += '</div>';
     devicesContainer.innerHTML = gridHTML;
+}
+
+function renderDeviceSimpleList(devices) {
+    const devicesContainer = document.getElementById('devices-container');
+    if (!devicesContainer) return;
+
+    const filtered = filterOnlineDevices(devices);
+    if (filtered.length === 0) {
+        devicesContainer.innerHTML = `
+            <div class="text-center py-8 text-gray-400">
+                <i class="ti ti-router text-4xl mb-2 block"></i>
+                <p>No devices have been seen online</p>
+                <p class="text-sm text-gray-500">Start a network scan to discover devices</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="space-y-0.5">';
+    filtered.forEach(device => {
+        const icon = getDeviceIcon(device);
+        const name = device.name || device.hostname || device.vendor || '';
+        const statusColor = device.status === 'online' ? '#10b981' : (device.status === 'idle' ? '#eab308' : '#6b7280');
+
+        html += `
+            <div class="flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-all duration-150"
+                 style="border: 1px solid transparent;"
+                 onmouseover="this.style.background='var(--bg-tertiary)'; this.style.borderColor='rgba(16,185,129,0.2)'"
+                 onmouseout="this.style.background='transparent'; this.style.borderColor='transparent'"
+                 onclick="loadDeviceModal('${device.id}')">
+                <span class="text-gray-400 flex-shrink-0">${icon}</span>
+                <span class="w-2 h-2 rounded-full flex-shrink-0" style="background:${statusColor}"></span>
+                <span class="font-mono text-sm font-semibold text-white flex-shrink-0">${device.ipv4}</span>
+                ${name ? `<span class="text-sm text-gray-400 truncate">${name}</span>` : ''}
+            </div>
+        `;
+    });
+    html += '</div>';
+    devicesContainer.innerHTML = html;
+}
+
+function renderDeviceFullTable(devices) {
+    const devicesContainer = document.getElementById('devices-container');
+    if (!devicesContainer) return;
+
+    const filtered = filterOnlineDevices(devices);
+    if (filtered.length === 0) {
+        devicesContainer.innerHTML = `
+            <div class="text-center py-8 text-gray-400">
+                <i class="ti ti-router text-4xl mb-2 block"></i>
+                <p>No devices have been seen online</p>
+                <p class="text-sm text-gray-500">Start a network scan to discover devices</p>
+            </div>
+        `;
+        return;
+    }
+
+    const sortArrow = (col) => {
+        if (tableSortCol !== col) return '<span style="color:var(--text-muted)" class="ml-1">⇅</span>';
+        return tableSortDir === 'asc'
+            ? '<span class="text-green-400 ml-1">↑</span>'
+            : '<span class="text-green-400 ml-1">↓</span>';
+    };
+
+    const sorted = [...filtered].sort((a, b) => {
+        let valA, valB;
+        if (tableSortCol === 'name') {
+            valA = (a.name || a.hostname || '').toLowerCase();
+            valB = (b.name || b.hostname || '').toLowerCase();
+        } else if (tableSortCol === 'mac') {
+            valA = (a.mac || '').toLowerCase();
+            valB = (b.mac || '').toLowerCase();
+        } else {
+            // IP numeric sort
+            const toNum = ip => ip ? ip.split('.').reduce((acc, oct) => acc * 256 + parseInt(oct, 10), 0) : 0;
+            return tableSortDir === 'asc' ? toNum(a.ipv4) - toNum(b.ipv4) : toNum(b.ipv4) - toNum(a.ipv4);
+        }
+        if (valA < valB) return tableSortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return tableSortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    const thStyle = 'px-3 py-2 text-left text-green-500 text-xs font-semibold';
+    const thSortStyle = thStyle + ' cursor-pointer select-none hover:text-green-400';
+
+    let html = `
+        <div class="overflow-x-auto rounded" style="background: var(--bg-secondary);">
+            <table class="w-full text-sm">
+                <thead style="background: var(--bg-primary);">
+                    <tr>
+                        <th class="${thStyle} w-8"></th>
+                        <th class="${thSortStyle}" onclick="sortDeviceTable('name')">Name ${sortArrow('name')}</th>
+                        <th class="${thSortStyle}" onclick="sortDeviceTable('ipv4')">IP Address ${sortArrow('ipv4')}</th>
+                        <th class="${thSortStyle}" onclick="sortDeviceTable('mac')">MAC Address ${sortArrow('mac')}</th>
+                        <th class="${thStyle}">Vendor</th>
+                        <th class="${thStyle}">OS</th>
+                        <th class="${thStyle}">Status</th>
+                        <th class="${thStyle}">Ports</th>
+                        <th class="${thStyle}">Last Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    sorted.forEach(device => {
+        const icon = getDeviceIcon(device);
+        const name = device.name || device.hostname || '';
+        const os = device.os ? (device.os.name || '') : '';
+        const lastSeen = device.last_seen_online_at || device.LastSeenOnlineAt;
+        const lastSeenText = lastSeen ? getTimeAgo(lastSeen) : '-';
+
+        let openPorts = 0, filteredPorts = 0;
+        if (device.ports && Array.isArray(device.ports)) {
+            device.ports.forEach(p => {
+                if (p.state === 'open') openPorts++;
+                else if (p.state === 'filtered') filteredPorts++;
+            });
+        }
+        const portText = openPorts > 0
+            ? `<span class="text-red-400">${openPorts} open</span>`
+            : (filteredPorts > 0 ? `<span class="text-yellow-500">${filteredPorts} filtered</span>` : '<span style="color:var(--text-muted)">-</span>');
+
+        html += `
+            <tr class="cursor-pointer transition-all duration-150" style="border-top: 1px solid rgba(75,85,99,0.2);"
+                onmouseover="this.style.background='var(--bg-tertiary)'"
+                onmouseout="this.style.background=''"
+                onclick="loadDeviceModal('${device.id}')">
+                <td class="px-3 py-2 text-gray-400">${icon}</td>
+                <td class="px-3 py-2 text-gray-300">${name || '<span style="color:var(--text-muted)">-</span>'}</td>
+                <td class="px-3 py-2 font-mono font-semibold text-white">${device.ipv4}</td>
+                <td class="px-3 py-2 text-blue-400 font-mono text-xs">${device.mac || '<span style="color:var(--text-muted)">-</span>'}</td>
+                <td class="px-3 py-2 text-gray-400 text-xs">${device.vendor || '<span style="color:var(--text-muted)">-</span>'}</td>
+                <td class="px-3 py-2 text-gray-400 text-xs">${os || '<span style="color:var(--text-muted)">-</span>'}</td>
+                <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs ${getStatusBadgeColor(device.status)}">${device.status}</span></td>
+                <td class="px-3 py-2 text-xs">${portText}</td>
+                <td class="px-3 py-2 text-xs" style="color:var(--text-muted)">${lastSeenText}</td>
+            </tr>
+        `;
+    });
+
+    html += '</tbody></table></div>';
+    devicesContainer.innerHTML = html;
+}
+
+function sortDeviceTable(col) {
+    if (tableSortCol === col) {
+        tableSortDir = tableSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+        tableSortCol = col;
+        tableSortDir = 'asc';
+    }
+    renderDeviceFullTable(lastLoadedDevices);
 }
 
 function getDeviceIcon(device) {
@@ -521,8 +701,13 @@ function renderDeviceTable(devices) {
 // Make functions available globally
 window.loadDevices = loadDevices;
 window.loadDeviceList = loadDeviceList;
+window.renderDevices = renderDevices;
 window.renderDeviceGrid = renderDeviceGrid;
+window.renderDeviceSimpleList = renderDeviceSimpleList;
+window.renderDeviceFullTable = renderDeviceFullTable;
 window.renderDeviceTable = renderDeviceTable;
+window.sortDeviceTable = sortDeviceTable;
+window.setDeviceView = setDeviceView;
 window.loadDeviceModal = loadDeviceModal;
 window.renderDeviceModal = renderDeviceModal;
 window.getStatusBadgeColor = getStatusBadgeColor;
